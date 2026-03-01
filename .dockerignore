@@ -1,0 +1,17 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+data
+dist
+build
+target
+chromapro_core/target
+
+*.sqlite3
+*.db

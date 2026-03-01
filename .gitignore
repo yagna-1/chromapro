@@ -1,0 +1,17 @@
+.venv/
+.venv-release-build/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+*.pyc
+build/
+dist/
+*.egg-info/
+target/
+
+# RocksDB test data and HNSW artifacts generated during tests
+data/
+*.hnsw
+*.deleted
+*.mapping
+*.lock

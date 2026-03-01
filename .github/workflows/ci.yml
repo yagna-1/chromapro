@@ -1,0 +1,135 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libssl-dev
+      - run: python -m pip install --upgrade pip
+      - run: pip install maturin pytest ruff chroma-hnswlib numpy
+      - run: ruff check chromapro tests
+      - run: cargo check --manifest-path chromapro_core/Cargo.toml
+      - run: maturin develop -m chromapro_core/Cargo.toml
+      - run: python -m pytest -q
+
+  adversarial-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libssl-dev
+      - run: python -m pip install --upgrade pip
+      # chromadb needed for the comparative test suite
+      - run: pip install maturin pytest chroma-hnswlib numpy chromadb
+      - run: maturin develop -m chromapro_core/Cargo.toml
+      - name: Run ChromaDB vs ChromaPro adversarial suite
+        run: python -m pytest tests/test_chromadb_vs_chromapro.py -v -s 2>&1 | tee adversarial_results.txt
+      - name: Post results summary
+        if: always()
+        run: |
+          echo "## Adversarial Test Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -20 adversarial_results.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libssl-dev
+      - run: python -m pip install --upgrade pip
+      - run: pip install maturin pytest chroma-hnswlib numpy chromadb
+      - run: maturin develop -m chromapro_core/Cargo.toml
+      - name: Run benchmark suite
+        run: python -m pytest tests/test_benchmarks.py -v -s -m benchmark 2>&1 | tee benchmark_results.txt
+      - name: Post benchmark summary
+        if: always()
+        run: |
+          echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat benchmark_results.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  cli-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libssl-dev
+      - run: python -m pip install --upgrade pip
+      - run: pip install maturin chroma-hnswlib numpy
+      - run: maturin develop -m chromapro_core/Cargo.toml
+      - name: CLI migration/verify/rebuild/health e2e
+        run: |
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"
+          src="$tmpdir/legacy.sqlite3"
+          out="$tmpdir/chromapro_data"
+          report="$tmpdir/report.json"
+
+          SRC="$src" python - <<'PY'
+          import json
+          import os
+          import sqlite3
+
+          src = os.environ["SRC"]
+          conn = sqlite3.connect(src)
+          conn.execute("CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT, metadata TEXT)")
+          conn.execute(
+              "CREATE TABLE embeddings (id TEXT PRIMARY KEY, collection_id TEXT, embedding TEXT, document TEXT, metadata TEXT)"
+          )
+          conn.execute(
+              "INSERT INTO collections (id, name, metadata) VALUES (?, ?, ?)",
+              ("c1", "docs", json.dumps({"dimension": 2, "env": "ci"})),
+          )
+          for i in range(4):
+              conn.execute(
+                  "INSERT INTO embeddings (id, collection_id, embedding, document, metadata) VALUES (?, ?, ?, ?, ?)",
+                  (f"id_{i}", "c1", json.dumps([float(i), float(i + 1)]), f"doc-{i}", json.dumps({"i": i})),
+              )
+          conn.commit()
+          conn.close()
+          PY
+
+          python -m chromapro.cli migrate "$src" "$out" --report "$report" --batch-size 2
+          python -m chromapro.cli verify "$out" docs
+          python -m chromapro.cli stats "$out" docs
+          python -m chromapro.cli rebuild-index "$out" docs
+          python -m chromapro.cli health "$out"
+          rm -rf "$tmpdir"
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f docker/docker-compose.yml build
+
+  release-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libssl-dev
+      - run: bash scripts/release_smoke.sh

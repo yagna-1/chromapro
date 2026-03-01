@@ -1,0 +1,74 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "chromapro"
+version = "0.1.0"
+description = "Chroma-compatible local vector persistence with Rust + RocksDB — durability-first"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+  {name = "ChromaPro Contributors"},
+]
+keywords = ["vector-database", "embeddings", "hnswlib", "rocksdb", "chroma", "persistence"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Rust",
+  "Topic :: Database",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+]
+dependencies = [
+  "chroma-hnswlib>=0.7.0",
+  "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.4",
+  "chromadb>=0.6",
+  "maturin>=1.5,<2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/OWNER/REPO"
+Issues = "https://github.com/OWNER/REPO/issues"
+Changelog = "https://github.com/OWNER/REPO/blob/main/CHANGELOG.md"
+
+[project.scripts]
+chromapro = "chromapro.cli:main"
+
+[tool.maturin]
+bindings = "pyo3"
+module-name = "chromapro_core"
+python-source = "."
+python-packages = ["chromapro"]
+exclude = ["**/__pycache__/*", "**/*.pyc", "**/*.pyo"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["."]
+markers = [
+  "benchmark: performance measurement tests (use -m benchmark to run)",
+  "slow: tests that take >30s (use -m slow to run)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]

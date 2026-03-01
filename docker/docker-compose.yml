@@ -1,0 +1,14 @@
+services:
+  chromapro:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      - PERSIST_DIRECTORY=/data
+    volumes:
+      - ../data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "from chromapro import PersistentClient; c=PersistentClient('/data'); print(c.heartbeat()); c.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
