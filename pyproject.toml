@@ -42,9 +42,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/OWNER/REPO"
-Issues = "https://github.com/OWNER/REPO/issues"
-Changelog = "https://github.com/OWNER/REPO/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/yagna-1/chromapro"
+Issues = "https://github.com/yagna-1/chromapro/issues"
+Changelog = "https://github.com/yagna-1/chromapro/blob/main/CHANGELOG.md"
 
 [project.scripts]
 chromapro = "chromapro.cli:main"
