@@ -50,6 +50,7 @@ Changelog = "https://github.com/yagna-1/chromapro/blob/main/CHANGELOG.md"
 chromapro = "chromapro.cli:main"
 
 [tool.maturin]
+manifest-path = "chromapro_core/Cargo.toml"
 bindings = "pyo3"
 module-name = "chromapro_core"
 python-source = "."
