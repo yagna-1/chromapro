@@ -18,7 +18,7 @@ jobs:
       - run: pip install maturin pytest ruff chroma-hnswlib numpy
       - run: ruff check chromapro tests
       - run: cargo check --manifest-path chromapro_core/Cargo.toml
-      - run: maturin develop -m chromapro_core/Cargo.toml
+      - run: pip install -e .
       - run: python -m pytest -q
 
   adversarial-tests:
@@ -33,7 +33,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       # chromadb needed for the comparative test suite
       - run: pip install maturin pytest chroma-hnswlib numpy chromadb
-      - run: maturin develop -m chromapro_core/Cargo.toml
+      - run: pip install -e .
       - name: Run ChromaDB vs ChromaPro adversarial suite
         run: python -m pytest tests/test_chromadb_vs_chromapro.py -v -s 2>&1 | tee adversarial_results.txt
       - name: Post results summary
@@ -55,7 +55,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libssl-dev
       - run: python -m pip install --upgrade pip
       - run: pip install maturin pytest chroma-hnswlib numpy chromadb
-      - run: maturin develop -m chromapro_core/Cargo.toml
+      - run: pip install -e .
       - name: Run benchmark suite
         run: python -m pytest tests/test_benchmarks.py -v -s -m benchmark 2>&1 | tee benchmark_results.txt
       - name: Post benchmark summary
@@ -77,7 +77,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libssl-dev
       - run: python -m pip install --upgrade pip
       - run: pip install maturin chroma-hnswlib numpy
-      - run: maturin develop -m chromapro_core/Cargo.toml
+      - run: pip install -e .
       - name: CLI migration/verify/rebuild/health e2e
         run: |
           set -euo pipefail

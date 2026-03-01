@@ -15,3 +15,7 @@ data/
 *.deleted
 *.mapping
 *.lock
+
+# Temporary logs and test results
+*.log
+*.txt
