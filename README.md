@@ -22,7 +22,7 @@ Chroma-compatible API backed by RocksDB + hnswlib, built for crash safety, multi
 | Corruption detection | Single SQLite page corruption = silent data loss | ✅ RocksDB CRC32c detects corrupted blocks |
 | Explicit `rebuild_index()` | ❌ Not available | ✅ Compacts HNSW + clears tombstones from RocksDB |
 
-**Trade-off:** ChromaPro is ~1.5–3× slower on raw write throughput vs ChromaDB due to synchronous `fsync`. If you never experience crashes or multi-process access, ChromaDB is fine. If you need hard durability guarantees, use ChromaPro.
+**Trade-off:** ChromaPro is ~4× slower on bulk write throughput vs ChromaDB due to HNSW index construction, but **~9× faster on single writes** thanks to RocksDB's synced WAL. Queries carry a ~25× overhead from per-query cross-process safety checks. If you never experience crashes or multi-process access, ChromaDB is fine. If you need hard durability guarantees, use ChromaPro.
 
 ---
 
@@ -230,31 +230,31 @@ chromapro/
 
 ### Write Latency — Single Record (384-dim, N=500)
 
-Each call to `add()` persists one record then `fsync`s to disk.
+Each call to `add()` persists one record with synced WAL write to RocksDB.
 
 | | Latency / record | Notes |
 |---|---|---|
-| **ChromaPro** | ~34 ms | fsync on every write — crash-safe guarantee |
+| **ChromaPro** | ~1.6 ms | Synced WAL write — crash-safe, HNSW save deferred |
 | **ChromaDB** | ~14 ms | async WAL — may lose data on SIGKILL |
-| Difference | **~2.4× slower** | Cost of the synchronous durability guarantee |
+| Difference | **~8.9× faster** | RocksDB synced WAL is faster than SQLite for single writes |
 
 ### Bulk Write — 10,000 Records in One Call (384-dim)
 
 | | Total time | Throughput | Notes |
 |---|---|---|---|
-| **ChromaPro** | ~11.8 s | ~850 rec/s | Single fsync after batch — far better than per-record |
-| **ChromaDB** | ~2.9 s | ~3,400 rec/s | SQLite WAL batching |
-| Difference | **~4× slower** | | Use bulk `add()` to minimise the gap |
+| **ChromaPro** | ~13 s | ~765 rec/s | Single synced WAL write + HNSW build |
+| **ChromaDB** | ~3.3 s | ~3,000 rec/s | SQLite WAL batching |
+| Difference | **~4× slower** | HNSW index construction dominates bulk writes |
 
-> **Tip:** Always prefer one large `add()` call over many small ones. ChromaPro flushes once per `add()`, so a 10k-record batch is ~40× more efficient than 10k single-record calls.
+> **Tip:** Always prefer one large `add()` call over many small ones. ChromaPro issues only one WAL sync per `add()`.
 
 ### ANN Query Throughput — 10,000 Records, N=200 Queries
 
 | | Latency / query | Notes |
 |---|---|---|
-| **ChromaPro** | ~47 ms | Includes lock-acquire + disk refresh per query |
-| **ChromaDB** | ~2.4 ms | In-memory HNSW, no disk touch |
-| Difference | **~20× slower** | Lock + `_refresh_from_disk_locked()` overhead dominates |
+| **ChromaPro** | ~75 ms | Includes lock-acquire + disk refresh per query |
+| **ChromaDB** | ~3 ms | In-memory HNSW, no disk touch |
+| Difference | **~25× slower** | Lock + `_refresh_from_disk_locked()` overhead dominates |
 
 > The underlying `hnswlib` ANN performance is identical. The overhead is ChromaPro's per-query cross-process safety check. For read-heavy workloads, consider batching queries.
 
@@ -263,8 +263,8 @@ Each call to `add()` persists one record then `fsync`s to disk.
 | | Time | Notes |
 |---|---|---|
 | **ChromaPro** | ~400 ms | Loads HNSW from `.hnsw` file on disk |
-| **ChromaDB** | ~7 ms | SQLite + in-memory index reconstruction |
-| Difference | **~57× slower** | HNSW binary load is O(N); typically a one-time startup cost |
+| **ChromaDB** | ~6 ms | SQLite + in-memory index reconstruction |
+| Difference | **~67× slower** | HNSW binary load is O(N); typically a one-time startup cost |
 
 ### HNSW Rebuild After Index Deletion
 
