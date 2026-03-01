@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use rocksdb::{ColumnFamilyDescriptor, Direction, IteratorMode, Options, WriteBatch, DB};
+use rocksdb::{
+    ColumnFamilyDescriptor, Direction, IteratorMode, Options, WriteBatch, WriteOptions, DB,
+};
 
 use crate::errors::ChromaProError;
 
@@ -17,10 +19,12 @@ impl Storage {
         let mut opts = Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
-        opts.set_write_buffer_size(64 * 1024 * 1024);
+        opts.set_write_buffer_size(128 * 1024 * 1024);
         opts.set_max_open_files(1000);
         opts.set_use_fsync(true);
         opts.set_wal_bytes_per_sync(1024 * 1024);
+        opts.set_max_background_jobs(4);
+        opts.increase_parallelism(4);
 
         let cfs = vec![
             ColumnFamilyDescriptor::new(CF_METADATA, Options::default()),
@@ -56,8 +60,9 @@ impl Storage {
         })
         .to_string();
 
-        self.db.put_cf(&cf, key.as_bytes(), value.as_bytes())?;
-        self.db.flush_cf(&cf)?;
+        let mut wopts = WriteOptions::default();
+        wopts.set_sync(true);
+        self.db.put_cf_opt(&cf, key.as_bytes(), value.as_bytes(), &wopts)?;
         Ok(())
     }
 
@@ -151,8 +156,9 @@ impl Storage {
             batch.put_cf(&cf_doc, doc_key.as_bytes(), doc_value.as_bytes());
         }
 
-        self.db.write(batch)?;
-        self.db.flush()?;
+        let mut wopts = WriteOptions::default();
+        wopts.set_sync(true);
+        self.db.write_opt(batch, &wopts)?;
         Ok(ids.len())
     }
 
@@ -178,8 +184,9 @@ impl Storage {
             batch.delete_cf(&cf_doc, doc_key.as_bytes());
         }
 
-        self.db.write(batch)?;
-        self.db.flush()?;
+        let mut wopts = WriteOptions::default();
+        wopts.set_sync(true);
+        self.db.write_opt(batch, &wopts)?;
         Ok(ids.len())
     }
 
@@ -309,8 +316,9 @@ impl Storage {
             batch.delete_cf(&cf_doc, key);
         }
 
-        self.db.write(batch)?;
-        self.db.flush()?;
+        let mut wopts = WriteOptions::default();
+        wopts.set_sync(true);
+        self.db.write_opt(batch, &wopts)?;
         Ok(())
     }
 }

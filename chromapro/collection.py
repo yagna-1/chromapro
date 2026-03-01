@@ -58,6 +58,12 @@ class Collection:
         self._deleted_ids: set[str] = set()
         self._deleted_path = os.path.join(client.path, f"{id}.deleted")
 
+        # Deferred HNSW save: only write to disk every N records or on close.
+        # RocksDB is the ground truth; if crash occurs before save, HNSW is
+        # rebuilt from RocksDB on next startup (existing recovery path).
+        self._unsaved_count = 0
+        self._save_threshold = 1000
+
         self._lock_path = os.path.join(client.path, f"{id}.lock")
         self._lock_file = None
 
@@ -215,8 +221,13 @@ class Collection:
                         self._reverse_map[fresh] = id_str
                         self._index.add_items(vec, [fresh])
 
-                # Immediate index persistence for crash consistency.
-                self._save_index()
+                # Defer index persistence — save only when threshold reached.
+                # RocksDB WAL sync guarantees data survives crash;
+                # HNSW is rebuilt from RocksDB if stale after unclean shutdown.
+                self._unsaved_count += len(ids)
+                if self._unsaved_count >= self._save_threshold:
+                    self._save_index()
+                    self._unsaved_count = 0
 
                 # Then persist payload to RocksDB.
                 serialized_embeddings = [pickle.dumps(emb.tolist()) for emb in embeddings]
@@ -552,6 +563,7 @@ class Collection:
         self._reverse_map = new_reverse_map
         self._counter = new_counter
         self._save_index()
+        self._unsaved_count = 0
         self._persist_deleted_ids_locked()
 
     def _save_index(self) -> None:
@@ -577,12 +589,13 @@ class Collection:
         self._refresh_from_disk_locked()
 
     def persist(self) -> None:
-        # Writes are persisted immediately in mutating operations.
-        # Refresh here to avoid stale process state being written back.
-        self._acquire_lock(shared=True)
+        # Flush any deferred HNSW index writes before releasing.
+        self._acquire_lock(shared=False)
         try:
             with self._write_lock:
-                self._refresh_from_disk_locked()
+                if self._unsaved_count > 0:
+                    self._save_index()
+                    self._unsaved_count = 0
         finally:
             self._release_lock()
 
@@ -590,6 +603,10 @@ class Collection:
         return os.path.join(self._client.path, f"{self.id}.mapping")
 
     def _refresh_from_disk_locked(self) -> None:
+        # If we have unsaved in-memory writes, our state is newer than disk.
+        # Skip reload to avoid overwriting with stale data.
+        if self._unsaved_count > 0:
+            return
         data: dict[str, Any] = {}
         mapping_path = self._mapping_path()
         if os.path.exists(mapping_path):
