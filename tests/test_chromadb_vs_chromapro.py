@@ -620,7 +620,7 @@ class TestAtomicIndexSave:
         assert "os.replace" in src, "_save_index() must use os.replace() for atomicity"
         assert "tmp" in src.lower(), "_save_index() must write to temp file first"
 
-        # Verify in practice: write 5 items and check .hnsw file is valid after each add
+        # Verify in practice: write 5 items, persist, then check .hnsw is valid
         db_path = str(tmp_path / "cpro")
         with ChromaProClient(path=db_path) as client:
             col = client.create_collection("atomic_test", metadata={"dimension": DIMENSION})
@@ -631,10 +631,12 @@ class TestAtomicIndexSave:
                     embeddings=[rand_vec(i)],
                     documents=[f"doc_{i}"],
                 )
-                # The .hnsw file must always be readable immediately after add
-                hnsw_path = Path(db_path) / f"{col.id}.hnsw"
-                assert hnsw_path.exists(), f".hnsw file missing after add {i}"
-                assert hnsw_path.stat().st_size > 0, f".hnsw file empty after add {i}"
+
+            # HNSW saves are deferred — flush to disk before checking
+            col.persist()
+            hnsw_path = Path(db_path) / f"{col.id}.hnsw"
+            assert hnsw_path.exists(), ".hnsw file missing after persist"
+            assert hnsw_path.stat().st_size > 0, ".hnsw file empty after persist"
 
         print("[ChromaPro] ✅ Atomic index save: os.replace() used, file always valid.")
 
