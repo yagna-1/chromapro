@@ -18,8 +18,8 @@ Chroma-compatible API backed by RocksDB + hnswlib, built for crash safety, multi
 | Cross-process safety | No file locks on HNSW binary | **`fcntl.LOCK_EX`** per collection — serializes writers |
 | Context manager | ❌ Not supported | ✅ `with PersistentClient(...) as client:` |
 | Version metadata | ❌ None | ✅ `chromapro_meta.json` — detects format mismatches |
-| HNSW recovery | Fails on cold restart after deletion | ✅ Auto-rebuilds from RocksDB ground truth |
-| Corruption detection | Single SQLite page corruption = silent data loss | ✅ RocksDB CRC32c detects corrupted blocks |
+| HNSW recovery | No automatic rebuild if deleted | ✅ Auto-rebuilds from RocksDB ground truth |
+| Corruption detection | SQLite corruption may render DB unreadable | ✅ RocksDB CRC32c detects corrupted blocks |
 | Explicit `rebuild_index()` | ❌ Not available | ✅ Compacts HNSW + clears tombstones from RocksDB |
 
 **Trade-off:** ChromaPro is ~4× slower on bulk write throughput vs ChromaDB due to HNSW index construction, but **~9× faster on single writes** thanks to RocksDB's synced WAL. Queries carry a ~25× overhead from per-query cross-process safety checks. If you never experience crashes or multi-process access, ChromaDB is fine. If you need hard durability guarantees, use ChromaPro.
@@ -273,10 +273,9 @@ When the `.hnsw` binary is deleted (accidental or crash), ChromaPro rebuilds it 
 | Scale | Rebuild time | Throughput |
 |---|---|---|
 | 1,000 records | ~0.2 s | ~5,100 rec/s |
-| 10,000 records | ~2–4 s | ~3,000–5,000 rec/s |
 | 50,000 records | ~15–40 s | ~1,500–3,000 rec/s |
 
-ChromaDB has **no rebuild path** — if the HNSW binary is deleted and the process restarts without the binary, queries fail permanently with no recovery mechanism.
+ChromaDB does not currently provide an automatic index rebuild mechanism — if the HNSW binary is missing, queries will fail until manually remediated.
 
 ---
 
@@ -289,11 +288,11 @@ ChromaPro ships a comprehensive adversarial test suite (`tests/test_chromadb_vs_
 | Scenario | ChromaDB | ChromaPro |
 |---|---|---|
 | `.hnsw` deleted, same process | Query survives (in-memory cache) | ✅ Rebuilds from RocksDB |
-| `.hnsw` deleted, fresh process restart | **Queries fail permanently** | ✅ Auto-rebuilds from RocksDB |
-| No integrity check between SQLite and HNSW | ❌ Confirmed — no cross-validation | ✅ RocksDB is the ground truth |
+| `.hnsw` deleted, fresh process restart | **Queries fail** | ✅ Auto-rebuilds from RocksDB |
+| Integrity check between SQLite and HNSW | ❌ No cross-validation detected | ✅ RocksDB is the ground truth |
 
 ```
-[ChromaDB] Critical: there is NO integrity check between SQLite and HNSW files
+[ChromaDB] No cross-validation detected between SQLite and HNSW files on startup
 [ChromaPro] ✅ HNSW deletion auto-recovered from RocksDB. count=30/30
 ```
 
@@ -304,12 +303,12 @@ ChromaDB's Rust backend creates **no lock files** on its HNSW binary data. Two s
 | | ChromaDB | ChromaPro |
 |---|---|---|
 | Lock file exists | ❌ None | ✅ `<collection-uuid>.lock` |
-| External `flock(LOCK_EX)` on HNSW data | **Succeeds** (Chrome holds no lock) | **Blocks** — lock is held exclusively |
-| Concurrent cross-process writers | Silent binary corruption possible | ✅ Serialized, 100/100 records correct |
+| External `flock(LOCK_EX)` on HNSW data | **Succeeds** (Chroma holds no lock) | **Blocks** — lock is held exclusively |
+| Concurrent cross-process writers | May risk index corruption | ✅ Serialized, 100/100 records correct |
 
 ```
 [ChromaDB] Lock files created: []   ← confirmed: no cross-process locking
-[ChromaDB] ❌ CONFIRMED: No cross-process locking → concurrent writers risk binary corruption.
+[ChromaDB] ❌ Concurrent writers risk binary corruption.
 [ChromaPro] Second writer BLOCKED (could not get lock): True
 [ChromaPro] ✅ Cross-process exclusive lock confirmed. 100/100 records correct.
 ```
@@ -338,7 +337,7 @@ ChromoDB's Rust backend currently survives GC cycles, but this is an **implement
 
 ### 5. SIGKILL Durability
 
-ChromaPro uses `set_use_fsync(true)` in RocksDB and calls `flush()` after every `WriteBatch`. Even if the process is `SIGKILL`ed immediately after `add()` returns, the data is on disk. ChromaDB's async WAL means data written between WAL flushes may be silently lost on kill.
+ChromaPro uses `set_use_fsync(true)` in RocksDB with synced WAL writes. Even if the process is `SIGKILL`ed immediately after `add()` returns, writes are synchronously committed to the WAL before returning, ensuring crash durability under standard POSIX filesystem guarantees. ChromaDB's async WAL means data written between WAL flushes may be lost on kill.
 
 ---
 

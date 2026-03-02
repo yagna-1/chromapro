@@ -1121,7 +1121,7 @@ class TestHNSWIndexRecovery:
             # meaning a fresh subprocess start may fail (the binary is gone on disk)
             print("[ChromaDB] ⚠️  HNSW files deleted but query still returned results")
             print("[ChromaDB] This means ChromaDB's Rust backend re-reads from SQLite at startup")
-            print("[ChromaDB] Critical: there is NO integrity check between SQLite and HNSW files")
+            print("\n[ChromaDB] No cross-validation detected between SQLite and HNSW files on startup")
             # Test passes regardless — we documented the real behavior
         else:
             pytest.skip("No HNSW binary files found — ChromaDB layout may have changed")
@@ -1233,7 +1233,7 @@ class TestThreadContention:
             print(f"[ChromaDB] External flock on HNSW data: acquired={got_lock}")
             print("[ChromaDB] ChromaDB does NOT hold an exclusive lock on its HNSW files")
             assert got_lock, "ChromaDB should NOT be holding an exclusive lock on HNSW binary"
-            print("[ChromaDB] ❌ CONFIRMED: No cross-process locking → concurrent writers risk binary corruption.")
+            print("[ChromaDB] ❌ Concurrent writers risk binary corruption.")
         else:
             print("[ChromaDB] No data_level0.bin found (may be in-memory only)")
             assert not chromadb_has_lock, "Expected no lock files"
